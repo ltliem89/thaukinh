@@ -1,11 +1,17 @@
 import React, { useRef, useState } from 'react';
 import {
+  ArrowDownToLine,
+  ArrowLeftFromLine,
+  ArrowRightFromLine,
+  ArrowUpFromLine,
   BookOpen,
   Box,
   ChevronDown,
   ChevronUp,
   Eye,
+  Focus,
   GripHorizontal,
+  Hand,
   HelpCircle,
   Info,
   Pause,
@@ -347,8 +353,66 @@ export const ControlOverlay: React.FC<ControlOverlayProps> = ({
           </div>
         </div>
 
-        {/* Right Cluster: Collapsible Menu Triggers & Icon Actions */}
-        <div className="pointer-events-auto flex items-center gap-1.5 bg-[#0f172a]/95 border border-slate-800 p-1 rounded-lg">
+        {/* Right Cluster: 5 Camera Direction Icon Buttons + Collapsible Menu Triggers */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-[#0f172a]/95 border border-slate-800 p-1 rounded-lg">
+          {/* Hand Pan indicator + 5 Camera View Icon Buttons: Trung tâm, Trái, Phải, Trên xuống, Sau tới */}
+          <div className="flex items-center gap-0.5 bg-slate-900 px-1 py-0.5 rounded border border-slate-800">
+            <span
+              className="px-1.5 py-1 text-[11px] text-amber-300 flex items-center gap-1"
+              title="Giữ chuột trái trên màn hình (biểu tượng bàn tay) để kéo qua lại xem từng vị trí; chuột phải để xoay 3D"
+            >
+              <Hand className="w-3.5 h-3.5" />
+            </span>
+
+            {(
+              [
+                {
+                  id: 'overview',
+                  title: 'Về trung tâm (Góc nhìn đầy đủ cả bàn)',
+                  icon: <Focus className="w-3.5 h-3.5" />,
+                },
+                {
+                  id: 'left_view',
+                  title: 'Nhìn từ bên trái qua',
+                  icon: <ArrowRightFromLine className="w-3.5 h-3.5" />,
+                },
+                {
+                  id: 'right_view',
+                  title: 'Nhìn từ bên phải qua',
+                  icon: <ArrowLeftFromLine className="w-3.5 h-3.5" />,
+                },
+                {
+                  id: 'top_down',
+                  title: 'Nhìn từ trên xuống',
+                  icon: <ArrowDownToLine className="w-3.5 h-3.5" />,
+                },
+                {
+                  id: 'back_view',
+                  title: 'Nhìn từ phía sau tới',
+                  icon: <ArrowUpFromLine className="w-3.5 h-3.5" />,
+                },
+              ] as Array<{ id: CameraPreset; title: string; icon: React.ReactNode }>
+            ).map((camBtn) => (
+              <button
+                key={camBtn.id}
+                onClick={() => {
+                  onUpdateState({ cameraPreset: camBtn.id });
+                  window.dispatchEvent(
+                    new CustomEvent('optics-camera-preset', { detail: camBtn.id })
+                  );
+                }}
+                title={camBtn.title}
+                className={`p-1.5 rounded transition-colors cursor-pointer ${
+                  state.cameraPreset === camBtn.id
+                    ? 'bg-amber-500 text-slate-950 font-semibold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                {camBtn.icon}
+              </button>
+            ))}
+          </div>
+
           {/* Menu Chi Tiết Chữ & Kịch Bản ("ẩn chi tiết trong thanh menu khi cần gọi") */}
           <button
             onClick={() => setTopMenuOpen((prev) => !prev)}

@@ -12,7 +12,15 @@ export type LensProfileId =
 
 export type BeamMode = 'single' | 'double' | 'triple' | 'bundle' | 'f_rays';
 
-export type CameraPreset = 'overview' | 'eye_view' | 'screen_closeup' | 'top_down' | 'lens_macro';
+export type CameraPreset =
+  | 'overview'
+  | 'left_view'
+  | 'right_view'
+  | 'top_down'
+  | 'back_view'
+  | 'eye_view'
+  | 'screen_closeup'
+  | 'lens_macro';
 
 export type AppScreenState = 'title' | 'playing' | 'paused' | 'guide_modal';
 

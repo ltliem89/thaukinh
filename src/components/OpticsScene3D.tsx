@@ -171,26 +171,43 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       40,
       container.clientWidth / container.clientHeight,
       0.5,
-      350
+      380
     );
-    camera.position.set(-5, 25, 62);
+    // Full laboratory table overview ("góc nhìn đầy đủ cả cái bàn")
+    camera.position.set(0, 32, 78);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.065;
-    controls.enableZoom = false; // Handled by custom table-bounded cursor wheel zoom
-    controls.maxPolarAngle = Math.PI * 0.48;
-    controls.minDistance = 8;
-    controls.maxDistance = 72;
-    controls.target.set(0, 7.5, 0);
+    controls.enableZoom = false; // Handled by custom cursor-centered wheel zoom
+    controls.screenSpacePanning = true;
+    // Left mouse button pans the screen ("bàn tay kéo màn hình di chuyển qua lại để xem từng vị trí"), Right/Middle rotates 3D
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.ROTATE,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
+    controls.maxPolarAngle = Math.PI * 0.485;
+    controls.minDistance = 5;
+    controls.maxDistance = 115;
+    controls.target.set(0, 5.5, 3);
+    renderer.domElement.style.cursor = 'grab';
 
     const camTransition = {
       active: false,
-      posTarget: new THREE.Vector3(-5, 25, 62),
-      lookTarget: new THREE.Vector3(0, 7.5, 0),
+      posTarget: new THREE.Vector3(0, 32, 78),
+      lookTarget: new THREE.Vector3(0, 5.5, 3),
     };
     controls.addEventListener('start', () => {
       camTransition.active = false;
+      if (!activeDragId) {
+        renderer.domElement.style.cursor = 'grabbing';
+      }
+    });
+    controls.addEventListener('end', () => {
+      if (!activeDragId) {
+        renderer.domElement.style.cursor = 'grab';
+      }
     });
 
     const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1e1b18, 0.65);
@@ -373,13 +390,7 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
     velvetTray.position.set(0, 1.5, 0);
     lensBoxGroup.add(velvetTray);
 
-    const caseLid = new THREE.Mesh(new THREE.BoxGeometry(23.5, 0.5, 7.0), boxWoodMat);
-    caseLid.position.set(0, 3.8, -4.8);
-    caseLid.rotation.x = -1.15;
-    caseLid.castShadow = true;
-    lensBoxGroup.add(caseLid);
-
-    // Chữ "HỘP THẤU KÍNH" đặt dán vào mặt trước của hộp
+    // Chữ "HỘP THẤU KÍNH" đặt dán vào mặt trước của hộp (Nắp hộp đã ẩn đi để nhìn rõ các thấu kính)
     const frontLabelTex = createLensBoxFrontLabelTexture(maxAniso);
     const frontLabelPlaque = new THREE.Mesh(
       new THREE.PlaneGeometry(10.5, 1.25),
@@ -448,10 +459,10 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
 
     scene.add(lensBoxGroup);
 
-    // 4. (6) Compact Nguồn điện (Positioned further left, Draggable on table, with Prominent Raised ON/OFF Button)
+    // 4. (6) Compact Nguồn điện (Positioned in the front-left of the table, Draggable, with Prominent Raised ON/OFF Button)
     const powerSupplyGroup = new THREE.Group();
     powerSupplyGroup.position.set(stateRef.current.psuPos[0], 0, stateRef.current.psuPos[1]);
-    powerSupplyGroup.rotation.y = 0.24;
+    powerSupplyGroup.rotation.y = 0.08;
 
     const psuBody = new THREE.Mesh(
       new THREE.BoxGeometry(7.8, 4.4, 5.8),
@@ -570,17 +581,17 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       const lampRearRed = new THREE.Vector3(lampX - 3.6, OPTICAL_AXIS_Y - 0.5, -0.5);
       const lampRearBlue = new THREE.Vector3(lampX - 3.6, OPTICAL_AXIS_Y - 0.5, 0.5);
 
-      const midZ = (redStart.z + 0) * 0.5;
+      const sideZ = redStart.z >= 0 ? Math.max(5.2, redStart.z * 0.55) : Math.min(-5.2, redStart.z * 0.55);
       const redCurve = new THREE.CatmullRomCurve3([
         redStart,
-        new THREE.Vector3((redStart.x + lampX) * 0.5 - 2, 0.35, midZ - 1.2),
-        new THREE.Vector3(lampX - 5.2, 2.5, -1.5),
+        new THREE.Vector3(Math.min(redStart.x, lampX) - 5.5, 0.35, sideZ),
+        new THREE.Vector3(lampX - 5.2, 2.5, redStart.z >= 0 ? 1.5 : -1.5),
         lampRearRed,
       ]);
       const blueCurve = new THREE.CatmullRomCurve3([
         blueStart,
-        new THREE.Vector3((blueStart.x + lampX) * 0.5 - 1.0, 0.35, midZ + 0.4),
-        new THREE.Vector3(lampX - 4.8, 2.2, 1.2),
+        new THREE.Vector3(Math.min(blueStart.x, lampX) - 4.5, 0.35, sideZ + 0.8),
+        new THREE.Vector3(lampX - 4.8, 2.2, redStart.z >= 0 ? 2.2 : 1.2),
         lampRearBlue,
       ]);
 
@@ -996,8 +1007,25 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       const s = stateRef.current;
       camTransition.active = true;
       if (preset === 'overview') {
-        camTransition.posTarget.set(-5, 25, 62);
-        camTransition.lookTarget.set(0, 7.5, 0);
+        // Về trung tâm: Toàn cảnh đầy đủ cả cái bàn thí nghiệm
+        camTransition.posTarget.set(0, 32, 78);
+        camTransition.lookTarget.set(0, 5.5, 3);
+      } else if (preset === 'left_view') {
+        // Nhìn từ bên trái qua
+        camTransition.posTarget.set(-76, 20, 8);
+        camTransition.lookTarget.set(-2, 7.0, 2);
+      } else if (preset === 'right_view') {
+        // Nhìn từ bên phải qua
+        camTransition.posTarget.set(72, 20, 8);
+        camTransition.lookTarget.set(0, 7.0, 2);
+      } else if (preset === 'top_down') {
+        // Nhìn từ trên xuống
+        camTransition.posTarget.set(0, 84, 2.5);
+        camTransition.lookTarget.set(0, 4.0, 2);
+      } else if (preset === 'back_view') {
+        // Nhìn từ phía sau tới
+        camTransition.posTarget.set(0, 26, -72);
+        camTransition.lookTarget.set(0, 6.5, 0);
       } else if (preset === 'lens_macro') {
         camTransition.posTarget.set(s.lensPos - 2, OPTICAL_AXIS_Y + 3.5, 16.5);
         camTransition.lookTarget.set(s.lensPos + 1, OPTICAL_AXIS_Y, 0);
@@ -1007,11 +1035,16 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       } else if (preset === 'screen_closeup') {
         camTransition.posTarget.set(s.screenPos - 16, OPTICAL_AXIS_Y + 3.5, 19);
         camTransition.lookTarget.set(s.screenPos, OPTICAL_AXIS_Y, 0);
-      } else if (preset === 'top_down') {
-        camTransition.posTarget.set(0, 64, 4);
-        camTransition.lookTarget.set(0, OPTICAL_AXIS_Y, 0);
       }
     };
+
+    const onCustomCameraPreset = (ev: Event) => {
+      const customEv = ev as CustomEvent<OpticsState['cameraPreset']>;
+      if (customEv.detail) {
+        applyCameraPreset(customEv.detail);
+      }
+    };
+    window.addEventListener('optics-camera-preset', onCustomCameraPreset);
 
     sceneHandlesRef.current = {
       syncSceneWithState: rebuildRaysAndScene,
@@ -1215,11 +1248,10 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
             ? 'ns-resize'
             : hitId === 'power_switch' || hitId === 'lamp_slit_head' || hitId?.startsWith('kit_lens_')
             ? 'pointer'
-            : hitId
-            ? 'grab'
-            : 'default';
+            : 'grab';
       } else {
-        renderer.domElement.style.cursor = 'default';
+        // Show hand cursor ("hiện bàn tay kéo màn hình di chuyển qua lại để xem từng vị trí")
+        renderer.domElement.style.cursor = 'grab';
       }
     };
 
@@ -1267,7 +1299,7 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
         pointerDownClientPos = null;
         didMoveDuringDrag = false;
         controls.enabled = true;
-        renderer.domElement.style.cursor = 'default';
+        renderer.domElement.style.cursor = 'grab';
       }
     };
 
@@ -1283,21 +1315,20 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       tableGroup,
     ];
     const _zoomAnchor = new THREE.Vector3();
-    const _tableCenter = new THREE.Vector3(-2, 7.5, 0);
-    const MAX_TABLE_CAM_DIST = 72;
-    const MIN_TABLE_CAM_DIST = 8;
+    const _tableCenter = new THREE.Vector3(0, 5.5, 3);
+    const MAX_TABLE_CAM_DIST = 112;
+    const MIN_TABLE_CAM_DIST = 5;
 
     const clampCameraToTable = () => {
-      // Keep OrbitControls target strictly inside the wooden table bounds
-      controls.target.x = Math.max(-44, Math.min(40, controls.target.x));
-      controls.target.y = Math.max(1.5, Math.min(15.0, controls.target.y));
-      controls.target.z = Math.max(-18, Math.min(18, controls.target.z));
+      // Allow panning across the entire wooden table to inspect every position
+      controls.target.x = Math.max(-52, Math.min(48, controls.target.x));
+      controls.target.y = Math.max(0.5, Math.min(20.0, controls.target.y));
+      controls.target.z = Math.max(-24, Math.min(24, controls.target.z));
 
-      if (camera.position.y < 2.2) {
-        camera.position.y = 2.2;
+      if (camera.position.y < 1.8) {
+        camera.position.y = 1.8;
       }
 
-      // Prevent camera from ever drifting further than MAX_TABLE_CAM_DIST from table center
       const distFromTableCenter = camera.position.distanceTo(_tableCenter);
       if (distFromTableCenter > MAX_TABLE_CAM_DIST) {
         camera.position
@@ -1312,29 +1343,8 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       camTransition.active = false;
 
       const clampedDelta = Math.max(-120, Math.min(120, e.deltaY));
-      const zoomFactor = Math.exp(clampedDelta * 0.0013);
+      const zoomFactor = Math.exp(clampedDelta * 0.0014);
 
-      // When zooming OUT (clampedDelta > 0), smoothly recenter toward the laboratory table
-      // and stop right at the table overview distance (no zooming out into empty space)
-      if (clampedDelta > 0) {
-        const currentCenterDist = camera.position.distanceTo(_tableCenter);
-        if (currentCenterDist >= MAX_TABLE_CAM_DIST - 0.2) {
-          controls.target.lerp(_tableCenter, 0.18);
-          clampCameraToTable();
-          controls.update();
-          return;
-        }
-        const nextCenterDist = Math.min(MAX_TABLE_CAM_DIST, currentCenterDist * zoomFactor);
-        const outScale = nextCenterDist / Math.max(1, currentCenterDist);
-
-        camera.position.lerpVectors(_tableCenter, camera.position, outScale);
-        controls.target.lerp(_tableCenter, 0.22);
-        clampCameraToTable();
-        controls.update();
-        return;
-      }
-
-      // When zooming IN (clampedDelta < 0), zoom toward the exact point on the laboratory table under the cursor
       getPointerNdc(e as unknown as PointerEvent);
       raycaster.setFromCamera(pointerNdc, camera);
 
@@ -1347,16 +1357,17 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
         _zoomAnchor.copy(controls.target);
       }
 
-      // Strictly clamp the zoom anchor onto the laboratory table volume
-      _zoomAnchor.x = Math.max(-46, Math.min(42, _zoomAnchor.x));
-      _zoomAnchor.y = Math.max(1.0, Math.min(14.5, _zoomAnchor.y));
-      _zoomAnchor.z = Math.max(-18, Math.min(18, _zoomAnchor.z));
+      // Clamp the zoom anchor onto the laboratory table area
+      _zoomAnchor.x = Math.max(-50, Math.min(46, _zoomAnchor.x));
+      _zoomAnchor.y = Math.max(0.5, Math.min(16.0, _zoomAnchor.y));
+      _zoomAnchor.z = Math.max(-22, Math.min(22, _zoomAnchor.z));
 
       const currentDist = camera.position.distanceTo(_zoomAnchor);
-      if (currentDist <= MIN_TABLE_CAM_DIST) return;
+      if (clampedDelta < 0 && currentDist <= MIN_TABLE_CAM_DIST) return;
+      if (clampedDelta > 0 && camera.position.distanceTo(_tableCenter) >= MAX_TABLE_CAM_DIST) return;
 
-      const nextDist = Math.max(MIN_TABLE_CAM_DIST, currentDist * zoomFactor);
-      const actualScale = nextDist / currentDist;
+      const nextDist = Math.max(MIN_TABLE_CAM_DIST, Math.min(MAX_TABLE_CAM_DIST, currentDist * zoomFactor));
+      const actualScale = nextDist / Math.max(0.5, currentDist);
 
       camera.position.lerpVectors(_zoomAnchor, camera.position, actualScale);
       controls.target.lerpVectors(_zoomAnchor, controls.target, actualScale);
@@ -1629,6 +1640,7 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('optics-camera-preset', onCustomCameraPreset);
       domElem.removeEventListener('pointerdown', onPointerDown);
       domElem.removeEventListener('wheel', onWheel);
       window.removeEventListener('pointermove', onPointerMove);
