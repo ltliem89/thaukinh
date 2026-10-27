@@ -1,0 +1,6 @@
+{
+  "name": "Phòng Thí Nghiệm Quang Học 3D: Thấu Kính Hội Tụ & Phân Kỳ",
+  "description": "Mô phỏng 3D trực quan thí nghiệm thấu kính hội tụ và thấu kính phân kỳ trên bàn gỗ với giá quang học, nguồn phát tia sáng, hạt photon chuyển động và màn hứng ảnh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
