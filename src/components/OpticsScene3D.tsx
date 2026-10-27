@@ -178,10 +178,10 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.065;
-    controls.enableZoom = false; // Handled by custom cursor-centered wheel zoom
-    controls.maxPolarAngle = Math.PI * 0.49;
-    controls.minDistance = 4;
-    controls.maxDistance = 150;
+    controls.enableZoom = false; // Handled by custom table-bounded cursor wheel zoom
+    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.minDistance = 8;
+    controls.maxDistance = 72;
     controls.target.set(0, 7.5, 0);
 
     const camTransition = {
@@ -1283,57 +1283,85 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       tableGroup,
     ];
     const _zoomAnchor = new THREE.Vector3();
-    const _viewDir = new THREE.Vector3();
-    const _fallbackPlane = new THREE.Plane();
+    const _tableCenter = new THREE.Vector3(-2, 7.5, 0);
+    const MAX_TABLE_CAM_DIST = 72;
+    const MIN_TABLE_CAM_DIST = 8;
+
+    const clampCameraToTable = () => {
+      // Keep OrbitControls target strictly inside the wooden table bounds
+      controls.target.x = Math.max(-44, Math.min(40, controls.target.x));
+      controls.target.y = Math.max(1.5, Math.min(15.0, controls.target.y));
+      controls.target.z = Math.max(-18, Math.min(18, controls.target.z));
+
+      if (camera.position.y < 2.2) {
+        camera.position.y = 2.2;
+      }
+
+      // Prevent camera from ever drifting further than MAX_TABLE_CAM_DIST from table center
+      const distFromTableCenter = camera.position.distanceTo(_tableCenter);
+      if (distFromTableCenter > MAX_TABLE_CAM_DIST) {
+        camera.position
+          .sub(_tableCenter)
+          .setLength(MAX_TABLE_CAM_DIST)
+          .add(_tableCenter);
+      }
+    };
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       camTransition.active = false;
 
+      const clampedDelta = Math.max(-120, Math.min(120, e.deltaY));
+      const zoomFactor = Math.exp(clampedDelta * 0.0013);
+
+      // When zooming OUT (clampedDelta > 0), smoothly recenter toward the laboratory table
+      // and stop right at the table overview distance (no zooming out into empty space)
+      if (clampedDelta > 0) {
+        const currentCenterDist = camera.position.distanceTo(_tableCenter);
+        if (currentCenterDist >= MAX_TABLE_CAM_DIST - 0.2) {
+          controls.target.lerp(_tableCenter, 0.18);
+          clampCameraToTable();
+          controls.update();
+          return;
+        }
+        const nextCenterDist = Math.min(MAX_TABLE_CAM_DIST, currentCenterDist * zoomFactor);
+        const outScale = nextCenterDist / Math.max(1, currentCenterDist);
+
+        camera.position.lerpVectors(_tableCenter, camera.position, outScale);
+        controls.target.lerp(_tableCenter, 0.22);
+        clampCameraToTable();
+        controls.update();
+        return;
+      }
+
+      // When zooming IN (clampedDelta < 0), zoom toward the exact point on the laboratory table under the cursor
       getPointerNdc(e as unknown as PointerEvent);
       raycaster.setFromCamera(pointerNdc, camera);
 
-      // Find the exact 3D point under the mouse cursor to act as the center of zoom
       const hits = raycaster.intersectObjects(zoomables, true);
       if (hits.length > 0) {
         _zoomAnchor.copy(hits[0].point);
       } else if (raycaster.ray.intersectPlane(_tableDragPlane, _intersectPt)) {
         _zoomAnchor.copy(_intersectPt);
       } else {
-        camera.getWorldDirection(_viewDir);
-        _fallbackPlane.setFromNormalAndCoplanarPoint(_viewDir, controls.target);
-        if (raycaster.ray.intersectPlane(_fallbackPlane, _intersectPt)) {
-          _zoomAnchor.copy(_intersectPt);
-        } else {
-          const dist = camera.position.distanceTo(controls.target);
-          raycaster.ray.at(dist, _zoomAnchor);
-        }
+        _zoomAnchor.copy(controls.target);
       }
 
-      const clampedDelta = Math.max(-120, Math.min(120, e.deltaY));
-      const zoomFactor = Math.exp(clampedDelta * 0.0014);
+      // Strictly clamp the zoom anchor onto the laboratory table volume
+      _zoomAnchor.x = Math.max(-46, Math.min(42, _zoomAnchor.x));
+      _zoomAnchor.y = Math.max(1.0, Math.min(14.5, _zoomAnchor.y));
+      _zoomAnchor.z = Math.max(-18, Math.min(18, _zoomAnchor.z));
 
       const currentDist = camera.position.distanceTo(_zoomAnchor);
-      if (currentDist < 0.01) return;
+      if (currentDist <= MIN_TABLE_CAM_DIST) return;
 
-      const nextDist = Math.max(4.5, Math.min(140, currentDist * zoomFactor));
+      const nextDist = Math.max(MIN_TABLE_CAM_DIST, currentDist * zoomFactor);
       const actualScale = nextDist / currentDist;
 
-      // Preserve exact look direction so _zoomAnchor stays locked at the exact pixel under the cursor
-      _viewDir.subVectors(controls.target, camera.position);
-      const currentTargetDist = _viewDir.length();
-      _viewDir.normalize();
-
       camera.position.lerpVectors(_zoomAnchor, camera.position, actualScale);
-      if (camera.position.y < 1.2) {
-        camera.position.y = 1.2;
-      }
-
       controls.target.lerpVectors(_zoomAnchor, controls.target, actualScale);
 
-      // Keep OrbitControls target at a healthy distance along the exact same sightline
-      const nextTargetDist = Math.max(5.5, Math.min(140, currentTargetDist * actualScale));
-      controls.target.copy(camera.position).addScaledVector(_viewDir, nextTargetDist);
+      clampCameraToTable();
       controls.update();
     };
 
@@ -1570,6 +1598,7 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
         }
       }
 
+      clampCameraToTable();
       controls.update();
       updatePhotons(elapsed);
       renderer.render(scene, camera);
