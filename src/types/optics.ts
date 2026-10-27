@@ -58,6 +58,8 @@ export interface OpticsState {
   showPhotons: boolean;
   showVirtualRays: boolean;
   showLabels: boolean;
+  ambientLightLevel: number; // 0 (Phòng tối) to 100 (Phòng sáng)
+  tableBrightness: number; // 10 (Mặt bàn tối) to 100 (Mặt bàn sáng)
   cameraPreset: CameraPreset;
   muted: boolean;
   activePresetId: string;

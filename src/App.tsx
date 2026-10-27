@@ -30,6 +30,8 @@ const INITIAL_OPTICS_STATE: OpticsState = {
   showPhotons: true,
   showVirtualRays: true,
   showLabels: true,
+  ambientLightLevel: 45,
+  tableBrightness: 65,
   cameraPreset: 'overview',
   muted: false,
   activePresetId: 'rays_conv_10',

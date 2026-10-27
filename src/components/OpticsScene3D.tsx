@@ -643,6 +643,17 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
     slitPlateMesh.position.set(4.28, OPTICAL_AXIS_Y, 0);
     lampGroup.add(slitPlateMesh);
 
+    // Physical lamp beam light for dark-room illumination on the optical bench & wooden table
+    const lampApertureGlowLight = new THREE.PointLight(0xffb74d, 1.8, 22, 1.4);
+    lampApertureGlowLight.position.set(4.8, OPTICAL_AXIS_Y, 0);
+    lampGroup.add(lampApertureGlowLight);
+
+    const lampBeamSpotLight = new THREE.SpotLight(0xffe082, 4.5, 95, Math.PI * 0.17, 0.65, 1.1);
+    lampBeamSpotLight.position.set(4.3, OPTICAL_AXIS_Y, 0);
+    lampBeamSpotLight.target.position.set(60, OPTICAL_AXIS_Y - 1.2, 0);
+    lampGroup.add(lampBeamSpotLight);
+    lampGroup.add(lampBeamSpotLight.target);
+
     lampGroup.traverse((child) => {
       child.userData = { draggableId: 'lamp' };
     });
@@ -824,6 +835,51 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       const s = stateRef.current;
       const c = calcRef.current;
 
+      // 1. Dynamic Ambient Room Light & Table Surface Brightness (Dark-Room Simulation)
+      const ambRatio = Math.max(0, Math.min(100, s.ambientLightLevel ?? 45)) / 100;
+      const darknessFactor = 1 - ambRatio; // 1.0 in pitch-dark room, 0.0 in bright room
+      const tableRatio = Math.max(10, Math.min(100, s.tableBrightness ?? 65)) / 100;
+
+      // Interpolate room background & fog from deep dark-room (0x03050a) to lit lab (0x121b2a)
+      const bgR = Math.round(3 + ambRatio * 15);
+      const bgG = Math.round(5 + ambRatio * 22);
+      const bgB = Math.round(10 + ambRatio * 32);
+      const bgHex = (bgR << 16) | (bgG << 8) | bgB;
+      (scene.background as THREE.Color).setHex(bgHex);
+      if (scene.fog instanceof THREE.FogExp2) {
+        scene.fog.color.setHex(bgHex);
+      }
+
+      hemiLight.intensity = 0.08 + ambRatio * 0.95;
+      keyLight.intensity = 0.14 + ambRatio * 2.35;
+      rimLight.intensity = 0.12 + ambRatio * 0.85;
+      scene.environmentIntensity = 0.12 + ambRatio * 0.95;
+
+      // Adjust wooden laboratory table surface brightness & anti-glare roughness
+      const woodScalar = 0.16 + tableRatio * 1.08;
+      woodMat.color.setRGB(woodScalar, woodScalar * 0.96, woodScalar * 0.92);
+      woodMat.roughness = 0.78 - tableRatio * 0.25;
+      apronMat.color.setRGB(
+        0.24 * woodScalar,
+        0.14 * woodScalar,
+        0.07 * woodScalar
+      );
+
+      // Update physical Lamp (1) beam illumination (stronger contrast in dark room)
+      const voltFactor = Math.max(0.25, (s.voltage - 1.5) / 10.5);
+      if (s.powerOn) {
+        lampApertureGlowLight.intensity = (1.2 + darknessFactor * 2.4) * voltFactor;
+        lampBeamSpotLight.intensity = (2.2 + darknessFactor * 6.5) * voltFactor;
+        lampBeamSpotLight.target.position.set(
+          60,
+          OPTICAL_AXIS_Y - 1.0 + s.rayOffsetY * 2.5,
+          0
+        );
+      } else {
+        lampApertureGlowLight.intensity = 0;
+        lampBeamSpotLight.intensity = 0;
+      }
+
       lampGroup.position.x = s.lampPos;
       objectGroup.position.x = s.objectPos;
       objectGroup.visible = s.experimentMode === 'f_object';
@@ -839,7 +895,7 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
       raisedSwitchCap.position.y = s.powerOn ? 5.12 : 5.38;
       raisedSwitchCapMat.color.setHex(s.powerOn ? 0x22c55e : 0xef4444);
       raisedSwitchCapMat.emissive.setHex(s.powerOn ? 0x16a34a : 0x7f1d1d);
-      raisedSwitchCapMat.emissiveIntensity = s.powerOn ? 0.75 : 0.35;
+      raisedSwitchCapMat.emissiveIntensity = s.powerOn ? 0.75 + darknessFactor * 0.45 : 0.35;
 
       // Update Lamp (1) front slit plate texture with vertical rayOffsetY
       lampSlitPlate.update(s.powerOn, s.experimentMode, s.beamMode, s.rayOffsetY);
@@ -924,11 +980,13 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
         const dist = _vec3A.distanceTo(_vec3B);
         if (dist < 0.03) return;
 
-        const cylGeo = new THREE.CylinderGeometry(radius, radius, dist, 10, 1, false);
+        // Core bright ray cylinder
+        const coreRadius = radius * (0.95 + darknessFactor * 0.25);
+        const cylGeo = new THREE.CylinderGeometry(coreRadius, coreRadius, dist, 10, 1, false);
         const cylMat = new THREE.MeshBasicMaterial({
           color: hexColor,
           transparent: true,
-          opacity,
+          opacity: Math.min(1, opacity + darknessFactor * 0.06),
           depthWrite: false,
         });
         const cyl = new THREE.Mesh(cylGeo, cylMat);
@@ -942,6 +1000,23 @@ export const OpticsScene3D: React.FC<OpticsScene3DProps> = ({ state, calc, onUpd
           cyl.userData = { draggableId: 'ray_beam' };
         }
         rayLinesGroup.add(cyl);
+
+        // Dark-room Tyndall / volumetric outer glow sheath around the ray
+        const haloRadius = coreRadius * (2.1 + darknessFactor * 1.9);
+        const haloOpacity = (0.14 + darknessFactor * 0.34) * voltFactor;
+        const haloGeo = new THREE.CylinderGeometry(haloRadius, haloRadius, dist, 10, 1, false);
+        const haloMat = new THREE.MeshBasicMaterial({
+          color: hexColor,
+          transparent: true,
+          opacity: haloOpacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+        haloMesh.position.copy(_vec3C);
+        haloMesh.quaternion.copy(_quatA);
+        haloMesh.renderOrder = 2;
+        rayLinesGroup.add(haloMesh);
 
         // Add wider invisible collider tube so grabbing and dragging the ray up/down is effortless
         if (isDraggableRay) {
